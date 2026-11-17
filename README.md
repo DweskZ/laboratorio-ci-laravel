@@ -93,9 +93,9 @@ on:
 
 El job `verificar` se ejecuta en `ubuntu-latest` y realiza, en orden:
 
-1. Obtener el código (`actions/checkout@v4`).
+1. Obtener el código (`actions/checkout@v7`).
 2. Configurar PHP 8.3 (`shivammathur/setup-php@v2`).
-3. Restaurar la caché de Composer (`actions/cache@v4`) para acelerar la
+3. Restaurar la caché de Composer (`actions/cache@v6`) para acelerar la
    instalación en ejecuciones posteriores.
 4. Instalar dependencias con Composer.
 5. Validar la sintaxis de los archivos PHP.
