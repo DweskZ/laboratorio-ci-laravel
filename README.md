@@ -1,14 +1,33 @@
 # Laboratorio: pipeline de CI con GitHub Actions en una API Laravel
 
+[![CI Laravel](https://github.com/DweskZ/laboratorio-ci-laravel/actions/workflows/ci.yml/badge.svg)](https://github.com/DweskZ/laboratorio-ci-laravel/actions/workflows/ci.yml)
+
 Curso IS-803, grupo 04.
 
 ## Propósito
 
 Demostrar cómo un pipeline de integración continua (CI) en GitHub Actions
 verifica automáticamente un backend Laravel en cada `push` y `pull_request`:
-instala dependencias, valida la sintaxis, prepara el entorno y ejecuta las
-pruebas. El proyecto expone un único endpoint, `GET /api/health`, con una
-prueba de característica asociada.
+instala dependencias, valida la sintaxis, prepara el entorno, ejecuta las
+pruebas y construye una imagen Docker. El proyecto expone un único endpoint,
+`GET /api/health`, con una prueba de característica asociada.
+
+## Réplica rápida (sin instalar nada)
+
+Solo se necesita un navegador y una cuenta de GitHub.
+
+1. En la página del repositorio, pulsar **Use this template** >
+   **Create a new repository** y crear la copia en la cuenta propia.
+2. Abrir la pestaña **Actions** de la copia: la primera ejecución de
+   "CI Laravel" se inicia sola y debe terminar en verde.
+3. Abrir `tests/Feature/HealthTest.php`, pulsar el lápiz (**Edit this file**)
+   y cambiar `'ok'` por `'fallo'` en `assertJson`.
+4. En **Commit changes**, elegir **Create a new branch for this commit and
+   start a pull request** y crear el pull request.
+5. Observar la verificación en rojo dentro del pull request y abrir el log
+   del paso "Ejecutar pruebas".
+6. En la misma rama, editar de nuevo el archivo, restaurar `'ok'` y
+   confirmar el cambio: la verificación vuelve a verde.
 
 ## Requisitos previos
 
@@ -58,19 +77,47 @@ El archivo debe estar exactamente en `.github/workflows/` y declarar los
 disparadores `push` y `pull_request`:
 
 ```yaml
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 ```
 
-### 4. Definir el job en ubuntu-latest
+- `push` a `main`: verifica lo que ya se integró.
+- `pull_request`: verifica el cambio antes de integrarlo.
+- `workflow_dispatch`: agrega el botón **Run workflow** en la pestaña
+  **Actions** para ejecutar el pipeline a mano, sin hacer un commit.
+
+### 4. Definir los jobs en ubuntu-latest
 
 El job `verificar` se ejecuta en `ubuntu-latest` y realiza, en orden:
 
 1. Obtener el código (`actions/checkout@v4`).
 2. Configurar PHP 8.3 (`shivammathur/setup-php@v2`).
-3. Instalar dependencias con Composer.
-4. Validar la sintaxis de los archivos PHP.
-5. Copiar `.env.example` a `.env` y generar `APP_KEY`.
-6. Ejecutar `php artisan test`.
+3. Restaurar la caché de Composer (`actions/cache@v4`) para acelerar la
+   instalación en ejecuciones posteriores.
+4. Instalar dependencias con Composer.
+5. Validar la sintaxis de los archivos PHP.
+6. Copiar `.env.example` a `.env` y generar `APP_KEY`.
+7. Ejecutar `php artisan test`.
+
+El job `construir` solo se ejecuta si `verificar` termina bien
+(`needs: verificar`):
+
+1. Construye la imagen Docker definida en `Dockerfile`.
+2. Levanta un contenedor y consulta `GET /api/health` para confirmar que la
+   imagen funciona. La `APP_KEY` se genera en ese momento y se pasa como
+   variable de entorno; no queda guardada en la imagen.
+
+Para probar la imagen en local:
+
+```bash
+docker build -t laboratorio-ci-laravel .
+docker run --rm -p 8000:8000 \
+  -e APP_KEY="base64:$(openssl rand -base64 32)" laboratorio-ci-laravel
+curl http://localhost:8000/api/health
+```
 
 ### 5. Subir un cambio y revisar la pestaña Actions
 
@@ -92,24 +139,27 @@ En `tests/Feature/HealthTest.php`, cambiar la aserción:
 $response->assertJson(['status' => 'fallo']);
 ```
 
-Confirmar el fallo en local y publicarlo:
+Confirmar el fallo en local y publicarlo en una rama con un pull request:
 
 ```bash
 php artisan test            # termina con código distinto de cero
+git switch -c demo/fallo-controlado
 git commit -am "test: break health assertion on purpose"
-git push
+git push -u origin demo/fallo-controlado
+gh pr create --fill         # o abrir el pull request desde la web
 ```
 
-El pipeline aparecerá en rojo en la pestaña **Actions**; revisar el log del
-paso "Ejecutar pruebas". Para corregirlo, restaurar `'ok'`:
+La verificación aparece en rojo dentro del pull request: el error se detecta
+antes de llegar a `main`. Revisar el log del paso "Ejecutar pruebas"; el job
+`construir` no se ejecuta porque depende de `verificar`. Para corregirlo,
+restaurar `'ok'`:
 
 ```bash
 git commit -am "fix: restore health assertion"
 git push
 ```
 
-El pipeline vuelve a verde. También puede revertirse con
-`git revert HEAD`.
+La verificación del pull request vuelve a verde.
 
 ## Errores frecuentes
 
